@@ -1,47 +1,44 @@
 # AI gateway model routing
 
-This repository is an independent, dated decision guide for developers choosing a multi-model API or gateway. It is not affiliated with any listed vendor. [ArgoLink](https://argolink.io/gh-ai-gateway-model-routing) is one row, not the editorial baseline. Last checked: 2026-10-07.
+This is an independent, dated comparison of gateways that can route AI traffic. It is not a product implementation and is not affiliated with any vendor. [ArgoLink](https://argolink.io/gh-ai-gateway-model-routing) is included as a provider/API row so its boundary is visible; it is not presented as a general-purpose gateway. Checked 2026-10-07.
 
-## How to read it
+## Capability matrix
 
-A platform comparison needs three separate questions: which model families are reachable, how usage is metered, and how a request is authenticated and routed. A check mark in one column does not imply a check mark in another. Unknown means the primary page was not verifiable on the checked date. It is safer to omit a price or payment method than to repeat a stale search result.
+The matrix distinguishes a gateway feature from an upstream model feature. “Configured” means an operator must provide the provider credentials and model mapping. “Plan-dependent” means the primary documentation describes the feature but availability or limits can vary by deployment or subscription.
 
-| Platform | Model access | OpenAI-shaped API | Image/video | Self-host | Billing observation |
-|---|---|---|---|---|---|
-| OpenRouter | hosted multi-provider catalog | documented compatibility | varies by model | no | provider/model dependent |
-| Together | hosted open-model focus | compatibility varies | image/video coverage changes | no | token or media units |
-| fal | hosted media and model endpoints | endpoint-specific | strong media coverage | no | model-specific |
-| Replicate | hosted model versions | endpoint-specific | model dependent | no | prediction or media units |
-| LiteLLM | gateway to configured providers | adapter layer | depends on upstream | yes | your provider bills |
-| Portkey Gateway | gateway and observability | compatibility layer | depends on upstream | yes/self-host options | upstream plus gateway |
-| Bifrost | self-hosted gateway | compatibility layer | depends on upstream | yes | upstream bills |
-| Cloudflare AI Gateway | hosted routing/telemetry | provider-dependent | provider-dependent | no | provider plus gateway policy |
-| ArgoLink | current catalog and model pages | OpenAI-compatible families | catalog-dependent | no | effective model rates |
-| Hugging Face providers | hosted provider routing | documented HF endpoint | provider/model dependent | no | provider dependent |
-| RunPod | GPU infrastructure and endpoints | user-deployed | user-deployed | yes | GPU time |
+| Gateway | Route / load balance | Fallback / retry | Cache | Budget / rate controls | Self-host | Protocol boundary |
+| --- | --- | --- | --- | --- | --- | --- |
+| [LiteLLM](https://docs.litellm.ai/docs/routing) | Configured providers and model groups | Router retries and fallbacks | Proxy cache adapters, deployment configured | Spend tracking, budgets, rate limits | Yes | OpenAI-compatible proxy to upstream APIs |
+| [Portkey Gateway](https://portkey.ai/docs/product/ai-gateway/overview) | Provider routing and load balancing | Fallbacks and retries | Gateway caching is configuration/plan dependent | Usage, limits and policies | Gateway package plus hosted options | OpenAI-shaped gateway to provider adapters |
+| [Bifrost](https://docs.getbifrost.ai/) | Provider/model routing | Configurable retries and fallbacks | Deployment-dependent; do not assume a shared cache | Configurable rate and usage controls | Yes | OpenAI-compatible gateway |
+| [Kong AI Gateway](https://developer.konghq.com/ai-gateway/) | Kong routes and provider targets | Kong retry/failover policy | AI Cache plugin/deployment dependent | Kong rate limiting and auth policies | Yes | Kong gateway plugins in front of provider APIs |
+| [Envoy AI Gateway](https://aigateway.envoyproxy.io/docs/) | Envoy model and backend routing | Envoy traffic policy; verify provider replay safety | No universal model cache contract | Envoy/Kubernetes policy | Yes | Kubernetes/Envoy gateway resources |
+| [OpenRouter](https://openrouter.ai/docs/features/provider-routing) | Hosted provider routing and provider preferences | Provider routing/fallback behavior | Prompt caching is provider/model dependent | Account credits and provider/model limits | No | Hosted OpenAI-shaped API |
+| [Cloudflare AI Gateway](https://developers.cloudflare.com/ai-gateway/) | Hosted provider integrations | Gateway/provider policy dependent | Request caching feature, with provider caveats | Cloudflare controls plus provider usage | No | Cloudflare account edge to provider APIs |
+| [Portkey hosted](https://portkey.ai/docs/product/ai-gateway/overview) | Hosted provider routing | Hosted fallback/retry policy | Plan/configuration dependent | Hosted usage and policy controls | No | Hosted gateway endpoint |
+| [ArgoLink](https://argolink.io/v1/models) | One API catalog; no cross-provider router claim | No general fallback contract | No general gateway-cache claim | Model-specific effective rates and account policy | No | `https://argolink.io/v1` model API |
 
-## Evidence and migration
+A check in one column never implies a check in another. For example, a gateway may retry a request while the upstream model does not support idempotency; blindly replaying a video or image POST can create a second billable job. Caching a prompt also does not mean media outputs are cacheable.
 
-For each row, record the primary documentation URL, checked date, and exact endpoint family. A landing page that says “supports images” is not evidence that the desired image model, size, quality, or reference count is available. An OpenAI-compatible claim does not prove Responses, chat completions, tools, streaming, images, and usage fields all work. Test a non-billable schema or local mock before switching production traffic.
+## Routing decisions
 
-A migration starts with model ID mapping, then base URL and authentication, then response parsing. Keep a capability matrix for streaming, tools, structured output, images, video, and usage. Add a fallback only after deciding whether a failed request is safe to replay. A gateway can route a request but cannot repair a provider-specific field mismatch.
+Use a self-hosted gateway when credentials, egress, budgets, and audit logs need one internal boundary. LiteLLM is a practical adapter-heavy choice; Bifrost, Kong, and Envoy are choices when Go/Kong/Kubernetes infrastructure is already part of the operating model. Portkey and Cloudflare are useful when hosted observability and policy reduce operational work. OpenRouter is a hosted model/provider catalog. ArgoLink is a direct model API and catalog; place a router in front of it only when the router owns a real multi-provider policy.
 
-## Choosing an architecture
+Route by explicit model ID, capabilities, and policy, not by a vague provider label. A route record should include model ID, upstream base URL, protocol, timeout, retry budget, idempotency behavior, estimated unit cost, and a redaction policy. Keep image and video endpoints separate from text endpoints: their asynchronous state, input limits, and billing units are different.
 
-Use a hosted aggregator when a small application needs broad model discovery and accepts provider-dependent availability. Use a self-hosted gateway when credentials, budgets, or egress policy need one internal boundary. Use a direct model API when the application needs new fields and can own retries and observability. Use GPU infrastructure only when a compatible model, image, weights, and operator are available; hourly compute is not automatically cheaper than a managed endpoint.
+## Fallback safety
 
-## Price discipline
+Classify failures before retrying: connection failure before a request was written can be retried under a bounded policy; a timeout after a POST may have created a job and needs request-ID reconciliation; a 4xx validation error should not be retried; a 429 should honor `Retry-After` and the provider's quota. Store the original model, selected fallback, request ID, and final status in an audit record. Do not turn a fallback policy into a hidden second charge.
 
-This guide does not publish unverified numeric rates. ArgoLink model pages expose effective rates for IDs in its current catalog. Other providers often expose model-specific calculators or token formulas. Compare an equivalent workload: input tokens, output tokens, cached tokens, video input seconds, output seconds, image size, and minimum billable duration. Keep official price, promotional credits, and reseller price in separate columns.
+## Configuration checklist
 
-## Security checklist
+1. Pin each provider adapter and record the provider's primary documentation URL.
+2. Keep credentials in the runtime secret store; configuration files contain references such as environment-variable names.
+3. Set connect/read timeouts, a descriptive `User-Agent`, and an allowlist for outbound hosts.
+4. Make budgets and concurrency limits explicit. A token budget is not a video-second budget.
+5. Exercise routing with local mocks before enabling billable traffic.
+6. Observe upstream request IDs and response usage without logging authorization headers or signed media URLs.
 
-Use environment variables or a secret manager. Do not put a production key in a compose file, README, issue, or request log. Set a User-Agent in standard-library clients. Allowlist outbound hosts and apply a timeout. Redact authorization headers and signed media URLs. Record the selected route and model ID for audit, but do not log user media by default.
+## Sources and scope
 
-## FAQ
-
-**Is this a ranking?** No; it is a selection aid. **Can one platform replace all others?** Usually not: fields, models, and billing differ. **Do stars prove reliability?** No; verify current docs and run a representative check. **Why are some cells unknown?** A missing primary source is not a fact. **Should a gateway retry POST?** Only with an idempotency contract; otherwise preserve the request ID and investigate.
-
-## Sources
-
-OpenRouter, fal, Together, Replicate, LiteLLM, Portkey, Bifrost, Cloudflare AI Gateway, Hugging Face, RunPod, and ArgoLink documentation/model pages were checked selectively for the row claims. Recheck each linked primary source before deployment; this is a dated guide, not a live schema.
+The linked primary pages are recorded in [`sources.md`](sources.md). They were checked on 2026-10-07. This is a dated capability map, not a promise that a vendor's plan, plugin, model catalog, or configuration schema stays unchanged. Re-check the linked page and your selected model before deployment.
